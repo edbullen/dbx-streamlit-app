@@ -1,6 +1,5 @@
-command: ["streamlit", "run", "app.py"]
-
 env:
-  - name: DATABRICKS_HTTP_PATH
-    valueFrom: /sql/1.0/warehouses/75fd8278393d07eb
+- name: 'DATABRICKS_HTTP_PATH'
+  value: '/sql/1.0/warehouses/75fd8278393d07eb'
 
+command: ["streamlit", "run", "app.py"]
