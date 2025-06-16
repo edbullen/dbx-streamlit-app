@@ -19,20 +19,30 @@ def credential_provider():
 @st.cache_data
 def get_data(table_name):
     # get a connection to a warehouse
-    with sql.connect(server_hostname=os.getenv("DATABRICKS_HOST"),
-                     http_path=os.getenv("DATABRICKS_HTTP_PATH"),
-                     credentials_provider=credential_provider()) as connection:
+    #with sql.connect(server_hostname=os.getenv("DATABRICKS_HOST"),
+    #                 http_path=os.getenv("DATABRICKS_HTTP_PATH"),
+    #                 credentials_provider=credential_provider()) as connection:
 
-        query = f"SELECT * FROM {table_name} LIMIT 10"
+    #    query = f"SELECT * FROM {table_name} LIMIT 10"
 
-        # use the connection to run a query
-        with connection.cursor() as cursor:
-            cursor.execute(query)
-            result = cursor.fetchall()
+    #    # use the connection to run a query
+    #    with connection.cursor() as cursor:
+    #        cursor.execute(query)
+    #        result = cursor.fetchall()
 
             # collect result rows into a list of dictionaries, then convert to a Pandas dataframe
-            rows = [r.asDict() for r in result]
-            df = pd.DataFrame(rows)
+    #        rows = [r.asDict() for r in result]
+    #        df = pd.DataFrame(rows)
+    data = {
+        'Name': ['Alice', 'Bob'],
+        'Age': [30, 25]
+    }
+
+    st.text(os.getenv("DATABRICKS_HOST"))
+    st.text(os.getenv("DATABRICKS_HTTP_PATH"))
+    st.text(table_name)
+
+    df = pd.DataFrame(data)
 
     return df
 
