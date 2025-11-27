@@ -1,5 +1,8 @@
 ## Test Databricks App - NYC Taxis
 
+![App Screenshot](./doc/apps_screenshot.png "screenshot") 
+
+
 ### Deploy a Databricks App 
 + Streamlit  
 + Databricks SQL   
@@ -19,6 +22,21 @@ The following env vars need to be set:
 - Grant access to the App to use the SQL Warehouse.  
 - Edit, click "Next" to get to App resources, add SQL Warehouse 
 - select the SQL warehouse that is already  configured in the YAML file
+
+### Running Locally for Development and Testing
+
+1. export the environment variables listed in the setup instrucions:
+
+`export DATABRICKS_SERVER_HOSTNAME=<myworkspace>.cloud.databricks.com` (note NO `https` prefix or trailing `/`)  
+`export DATABRICKS_CLIENT_ID=########-####-####-####-############`   
+`export DATABRICKS_CLIENT_SECRET=********************************`  
+`export DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/################`  
+
+2. Run the app:  
+`streamlit run app.py`
+
+3. Go to the browser:   
+`http://localhost:8501/`  
 
 ### Deploy to Databricks Compute:  
 
@@ -42,18 +60,7 @@ Changes being developed on a laptop IDE can be syncronised by commiting to a loc
 4. Go to the app and re-deploy it
 
 
-### Running Locally for Development and Testing
+![Web GUI Deploy](./doc/apps_git_deploy_screenshot.png "deploying via the web gui") 
 
-1. export the environment variables listed in the setup instrucions:
 
-`export DATABRICKS_SERVER_HOSTNAME=<myworkspace>.cloud.databricks.com` (note NO `https` prefix or trailing `/`)  
-`export DATABRICKS_CLIENT_ID=########-####-####-####-############`   
-`export DATABRICKS_CLIENT_SECRET=********************************`  
-`export DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/################`  
-
-2. Run the app:  
-`streamlit run app.py`
-
-3. Go to the browser:   
-`http://localhost:8501/`  
 
