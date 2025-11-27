@@ -108,24 +108,22 @@ if __name__ == "__main__":
         col3.metric("Max total fare (USD)", f"${max_total:,.2f}")
 
     # --- Visualisation: fare by passenger count (if columns exist) ---
-    if {"passenger_count", "total_amount"}.issubset(data.columns):
-        st.subheader("Fare amount by passenger count")
+    # --- Visualisation: average fare by pickup ZIP (works with common nyctaxi.trips schema) ---
+    if {"pickup_zip", "fare_amount"}.issubset(data.columns):
+        st.subheader("Average fare by pickup ZIP (sample)")
 
         grouped = (
-            data.groupby("passenger_count")["total_amount"]
-            .mean()
-            .reset_index()
-            .sort_values("passenger_count")
+            data.groupby("pickup_zip")["fare_amount"]
+                .mean()
+                .reset_index()
+                .sort_values("pickup_zip")
         )
-        grouped = grouped.rename(
-            columns={"total_amount": "avg_total_amount"}
-        )
+        grouped = grouped.rename(columns={"fare_amount": "avg_fare"})
 
-        st.bar_chart(
-            grouped,
-            x="passenger_count",
-            y="avg_total_amount",
-        )
+        # Streamlit is happiest if the index is the category
+        chart_data = grouped.set_index("pickup_zip")["avg_fare"]
+
+        st.bar_chart(chart_data)
 
     # --- Optional: top expensive trips ---
     if {"total_amount", "trip_distance"}.issubset(data.columns):
