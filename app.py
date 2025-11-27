@@ -7,7 +7,6 @@ from databricks.sdk.core import Config, oauth_service_principal
 import streamlit as st
 
 server_hostname = os.getenv("DATABRICKS_SERVER_HOSTNAME")
-print(server_hostname)
 
 def credential_provider():
     config = Config(
@@ -20,13 +19,15 @@ def credential_provider():
 
 @st.cache_data
 def get_data(table_name):
-    st.text(server_hostname)
-    st.text(os.getenv("DATABRICKS_HTTP_PATH"))
-    st.text(table_name)
+    warehouse_http_path=os.getenv("DATABRICKS_HTTP_PATH")
+
+    st.text(f"Workspace Server Name: {server_hostname}")
+    st.text(f"SQL Warehouse URL Path: {warehouse_http_path}")
+    st.text(f"Table to query: {table_name}")
 
     # get a connection to a warehouse
     with sql.connect(server_hostname=server_hostname,
-                     http_path=os.getenv("DATABRICKS_HTTP_PATH"),
+                     http_path=warehouse_http_path,
                      credentials_provider=credential_provider) as connection:
 
         query = f"SELECT * FROM {table_name} LIMIT 10"
