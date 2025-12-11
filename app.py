@@ -1,10 +1,14 @@
 import os
 import pandas as pd
+from dotenv import load_dotenv
 
 from databricks import sql
 from databricks.sdk.core import Config, oauth_service_principal
 
 import streamlit as st
+
+# for local development - picks up variables from .env file
+load_dotenv() 
 
 server_hostname = os.getenv("DATABRICKS_SERVER_HOSTNAME")
 warehouse_http_path = os.getenv("DATABRICKS_HTTP_PATH")
