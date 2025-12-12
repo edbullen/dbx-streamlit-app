@@ -1,4 +1,6 @@
 import os
+from typing import Dict, Optional
+
 import pandas as pd
 from dotenv import load_dotenv
 
@@ -14,6 +16,44 @@ server_hostname = os.getenv("DATABRICKS_SERVER_HOSTNAME")
 warehouse_http_path = os.getenv("DATABRICKS_HTTP_PATH")
 
 
+def _local_header_overrides() -> Dict[str, str]:
+    """Allow local development to mock Databricks forwarded headers."""
+    overrides = {}
+    if os.getenv("LOCAL_DEV_USER"):
+        overrides["x-forwarded-user"] = os.getenv("LOCAL_DEV_USER")
+    if os.getenv("LOCAL_DEV_EMAIL"):
+        overrides["x-forwarded-email"] = os.getenv("LOCAL_DEV_EMAIL")
+    if os.getenv("LOCAL_USER_TOKEN"):
+        overrides["x-forwarded-access-token"] = os.getenv("LOCAL_USER_TOKEN")
+    return {k: v for k, v in overrides.items() if v}
+
+
+def get_forwarded_headers() -> Dict[str, str]:
+    """Collect headers Databricks injects when the app runs in the service."""
+    headers: Dict[str, str] = {}
+    context = getattr(st, "context", None)
+    if context is not None:
+        context_headers = getattr(context, "headers", None) or {}
+        headers = {k.lower(): v for k, v in context_headers.items() if isinstance(k, str)}
+
+    # During local runs, let developers set LOCAL_* vars to mimic headers.
+    overrides = _local_header_overrides()
+    for key, value in overrides.items():
+        headers.setdefault(key, value)
+
+    return headers
+
+
+def resolve_user_identity(headers: Dict[str, str]) -> Dict[str, Optional[str]]:
+    username = headers.get("x-forwarded-preferred-username") or headers.get("x-forwarded-user")
+    email = headers.get("x-forwarded-email")
+    return {"username": username, "email": email}
+
+
+def resolve_access_token(headers: Dict[str, str]) -> Optional[str]:
+    return headers.get("x-forwarded-access-token")
+
+
 def credential_provider():
     config = Config(
         host=f"https://{server_hostname}",
@@ -24,13 +64,19 @@ def credential_provider():
 
 
 @st.cache_data(show_spinner=False)
-def get_data(table_name: str, limit: int = 200) -> pd.DataFrame:
+def get_data(
+    table_name: str,
+    limit: int = 200,
+    access_token: Optional[str] = None,
+) -> pd.DataFrame:
     # get a connection to a warehouse
-    with sql.connect(
-        server_hostname=server_hostname,
-        http_path=warehouse_http_path,
-        credentials_provider=credential_provider,
-    ) as connection:
+    connection_kwargs = dict(server_hostname=server_hostname, http_path=warehouse_http_path)
+    if access_token:
+        connection_kwargs["access_token"] = access_token
+    else:
+        connection_kwargs["credentials_provider"] = credential_provider
+
+    with sql.connect(**connection_kwargs) as connection:
         query = f"SELECT * FROM {table_name} LIMIT {int(limit)}"
 
         # use the connection to run a query
@@ -46,6 +92,10 @@ def get_data(table_name: str, limit: int = 200) -> pd.DataFrame:
 
 
 if __name__ == "__main__":
+    forwarded_headers = get_forwarded_headers()
+    user_identity = resolve_user_identity(forwarded_headers)
+    user_token = resolve_access_token(forwarded_headers)
+
     # --- Page config / header ---
     st.set_page_config(
         page_title="NYC Taxi Trips – Databricks + Streamlit Demo",
@@ -82,11 +132,14 @@ if __name__ == "__main__":
         f"SQL Warehouse path: {warehouse_http_path or 'N/A'}",
         language="bash",
     )
-    st.sidebar.caption("Auth: OAuth service principal")
+    viewer_label = user_identity.get("email") or user_identity.get("username") or "Unknown user"
+    auth_mode = "User authorization" if user_token else "App authorization"
+    st.sidebar.caption("Auth mode: " + auth_mode)
+    st.sidebar.caption(f"Viewer: {viewer_label}")
 
     # --- Data load ---
     with st.spinner("Loading data from Databricks SQL Warehouse..."):
-        data = get_data(table_name=table_name, limit=row_limit)
+        data = get_data(table_name=table_name, limit=row_limit, access_token=user_token)
 
     if data.empty:
         st.warning("No data returned from the query.")
@@ -144,5 +197,4 @@ if __name__ == "__main__":
         st.subheader("Sample data")
         with st.expander("Show data frame", expanded=True):
             st.dataframe(data, use_container_width=True, height=400)
-
 
