@@ -1,6 +1,6 @@
 env:
 - name: 'DATABRICKS_HTTP_PATH'
-  value: '/sql/1.0/warehouses/4b9b953939869799'
+  value: '/sql/1.0/warehouses/8da86422b283fbcf'
 - name: 'DATABRICKS_SERVER_HOSTNAME'
   value: 'e2-demo-field-eng.cloud.databricks.com'
 
