@@ -50,13 +50,6 @@ def resolve_user_identity(headers: Dict[str, str]) -> Dict[str, Optional[str]]:
     return {"username": username, "email": email}
 
 
-def resolve_access_token(headers: Dict[str, str]) -> Optional[str]:
-    token = headers.get("x-forwarded-access-token")
-    if token and token.lower().startswith("bearer "):
-        token = token.split(" ", 1)[1]
-    return token
-
-
 def credential_provider():
     config = Config(
         host=f"https://{server_hostname}",
@@ -66,38 +59,28 @@ def credential_provider():
     return oauth_service_principal(config)
 
 
-@st.cache_data(show_spinner=False)
-def get_data(
-    table_name: str,
-    limit: int = 200,
-    access_token: Optional[str] = None,
-) -> pd.DataFrame:
-    # get a connection to a warehouse
-    connection_kwargs = dict(server_hostname=server_hostname, http_path=warehouse_http_path)
-    if access_token:
-        connection_kwargs["access_token"] = access_token
-    else:
-        connection_kwargs["credentials_provider"] = credential_provider
-
+def _run_query(table_name: str, limit: int, connection_kwargs: Dict[str, str]) -> pd.DataFrame:
+    query = f"SELECT * FROM {table_name} LIMIT {int(limit)}"
     with sql.connect(**connection_kwargs) as connection:
-        query = f"SELECT * FROM {table_name} LIMIT {int(limit)}"
-
-        # use the connection to run a query
         with connection.cursor() as cursor:
             cursor.execute(query)
-            result = cursor.fetchall()
+            rows = [r.asDict() for r in cursor.fetchall()]
+            return pd.DataFrame(rows)
 
-            # collect result rows into a list of dictionaries, then convert to a Pandas dataframe
-            rows = [r.asDict() for r in result]
-            df = pd.DataFrame(rows)
 
-    return df
+@st.cache_data(show_spinner=False)
+def get_data(table_name: str, limit: int = 200) -> pd.DataFrame:
+    connection_kwargs = dict(
+        server_hostname=server_hostname,
+        http_path=warehouse_http_path,
+        credentials_provider=credential_provider,
+    )
+    return _run_query(table_name, limit, connection_kwargs)
 
 
 if __name__ == "__main__":
     forwarded_headers = get_forwarded_headers()
     user_identity = resolve_user_identity(forwarded_headers)
-    user_token = resolve_access_token(forwarded_headers)
 
     # --- Page config / header ---
     st.set_page_config(
@@ -136,13 +119,12 @@ if __name__ == "__main__":
         language="bash",
     )
     viewer_label = user_identity.get("email") or user_identity.get("username") or "Unknown user"
-    auth_mode = "User authorization" if user_token else "App authorization"
-    st.sidebar.caption("Auth mode: " + auth_mode)
+    st.sidebar.caption("Auth mode: App authorization")
     st.sidebar.caption(f"Viewer: {viewer_label}")
 
     # --- Data load ---
     with st.spinner("Loading data from Databricks SQL Warehouse..."):
-        data = get_data(table_name=table_name, limit=row_limit, access_token=user_token)
+        data = get_data(table_name=table_name, limit=row_limit)
 
     if data.empty:
         st.warning("No data returned from the query.")
