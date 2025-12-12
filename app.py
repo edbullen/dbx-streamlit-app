@@ -51,7 +51,10 @@ def resolve_user_identity(headers: Dict[str, str]) -> Dict[str, Optional[str]]:
 
 
 def resolve_access_token(headers: Dict[str, str]) -> Optional[str]:
-    return headers.get("x-forwarded-access-token")
+    token = headers.get("x-forwarded-access-token")
+    if token and token.lower().startswith("bearer "):
+        token = token.split(" ", 1)[1]
+    return token
 
 
 def credential_provider():
@@ -197,4 +200,3 @@ if __name__ == "__main__":
         st.subheader("Sample data")
         with st.expander("Show data frame", expanded=True):
             st.dataframe(data, use_container_width=True, height=400)
-
