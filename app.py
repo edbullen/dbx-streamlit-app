@@ -122,7 +122,8 @@ if __name__ == "__main__":
     st.sidebar.caption("Auth mode: App authorization")
     st.sidebar.caption(f"Viewer: {viewer_label}")
 
-    # --- Data load ---
+    # --- Data load --- 
+    # ToDo: if the warehouse is not available this spins for ever. Need to time-out with a message 
     with st.spinner("Loading data from Databricks SQL Warehouse..."):
         data = get_data(table_name=table_name, limit=row_limit)
 

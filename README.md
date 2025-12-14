@@ -9,15 +9,19 @@
 + OAUTH M2M Authentication  
 
 ### Setup:  
-The following env vars need to be set:  
+The following environment vars need to be set in app.yaml for when the app is deployed to Databricks workspace compute:  
 + `DATABRICKS_SERVER_HOSTNAME`  - the Databricks workspace URL, example: `dbc-xxxx.cloud.databricks.com`
-+ `DATABRICKS_CLIENT_ID`  - The OAUTH client ID
-+ `DATABRICKS_CLIENT_SECRET`  - The OAUTH secret
 + `DATABRICKS_HTTP_PATH` - The SQL warehouse URL, example: `/sql/1.0/warehouses/xxxx` 
+
+There is no need to set up a service principle for connecting the to the warehouse (this is only needed for local dev environment testing).  See the next section for granting access on the warehouse.
+
+The command to run the app is set in the app.yaml file:
+
++ `command: ["streamlit", "run", "app.py"]`   
 
 #### Configuring the SQL Warehouse and Access
 
-`DATABRICKS_HTTP_PATH` must be custom configured in the app.yaml file to match the SQL Warehouse that will be used.   
+`DATABRICKS_HTTP_PATH` must be custom configured in the `app.yaml` file to match the SQL Warehouse that will be used.   
 
 - Grant access to the App to use the SQL Warehouse.  
 - Edit, click "Next" to get to App resources, add SQL Warehouse 
@@ -25,12 +29,22 @@ The following env vars need to be set:
 
 ### Running Locally for Development and Testing
 
-1. export the environment variables listed in the setup instrucions:
+1. Setup the local environment variables in the `.env` file, to be picked up by `load_dotenv()`:
 
-`export DATABRICKS_SERVER_HOSTNAME=<myworkspace>.cloud.databricks.com` (note NO `https` prefix or trailing `/`)  
-`export DATABRICKS_CLIENT_ID=########-####-####-####-############`   
-`export DATABRICKS_CLIENT_SECRET=********************************`  
-`export DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/################`  
+```
+# Workspace Web address and path to SQL Warehouse
+DATABRICKS_SERVER_HOSTNAME=<myworkspace>.cloud.databricks.com  # No `https` prefix or trailing `/`  
+DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/################
+
+# Service Principal for SQL Warehouse
+DATABRICKS_ACCOUNT_ID=########-####-####-####-############
+DATABRICKS_CLIENT_ID=########-####-####-####-############
+DATABRICKS_CLIENT_SECRET=####################################
+
+LOCAL_DEV_EMAIL=dummy@email.com
+```
+
+- Make sure the .env file is not committed in the source code repo
 
 2. Run the app:  
 `streamlit run app.py`
