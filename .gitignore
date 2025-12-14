@@ -2,4 +2,5 @@
 .idea
 .python-version
 .vscode/
+test_logs/
 .env

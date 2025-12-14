@@ -1,4 +1,6 @@
+import logging
 import os
+from pathlib import Path
 from typing import Dict, Optional
 
 import pandas as pd
@@ -14,6 +16,33 @@ load_dotenv()
 
 server_hostname = os.getenv("DATABRICKS_SERVER_HOSTNAME")
 warehouse_http_path = os.getenv("DATABRICKS_HTTP_PATH")
+log_root = Path(os.getenv("APP_LOGS_VOL", "./logs")).expanduser()
+log_file_path = log_root / "app.log"
+
+
+def _setup_logger() -> logging.Logger:
+    logger = logging.getLogger("dbx_app_logger")
+    if logger.handlers:
+        return logger
+    logger.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+    logger.addHandler(stream_handler)
+
+    try:
+        log_root.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(log_file_path, encoding="utf-8")
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+    except Exception as exc:
+        logger.warning("Unable to create log file at %s: %s", log_file_path, exc)
+
+    return logger
+
+
+app_logger = _setup_logger()
 
 
 def _local_header_overrides() -> Dict[str, str]:
@@ -69,13 +98,24 @@ def _run_query(table_name: str, limit: int, connection_kwargs: Dict[str, str]) -
 
 
 @st.cache_data(show_spinner=False)
-def get_data(table_name: str, limit: int = 200) -> pd.DataFrame:
+def _fetch_data(table_name: str, limit: int = 200) -> pd.DataFrame:
     connection_kwargs = dict(
         server_hostname=server_hostname,
         http_path=warehouse_http_path,
         credentials_provider=credential_provider,
     )
     return _run_query(table_name, limit, connection_kwargs)
+
+
+def get_data(table_name: str, limit: int = 200, viewer_id: Optional[str] = None) -> pd.DataFrame:
+    data = _fetch_data(table_name=table_name, limit=limit)
+    app_logger.info(
+        "viewer=%s table=%s limit=%s",
+        viewer_id or "unknown",
+        table_name,
+        limit,
+    )
+    return data
 
 
 if __name__ == "__main__":
@@ -118,6 +158,7 @@ if __name__ == "__main__":
         f"SQL Warehouse path: {warehouse_http_path or 'N/A'}",
         language="bash",
     )
+    viewer_id_value = user_identity.get("username") or user_identity.get("email")
     viewer_label = user_identity.get("email") or user_identity.get("username") or "Unknown user"
     st.sidebar.caption("Auth mode: App authorization")
     st.sidebar.caption(f"Viewer: {viewer_label}")
@@ -125,7 +166,7 @@ if __name__ == "__main__":
     # --- Data load --- 
     # ToDo: if the warehouse is not available this spins for ever. Need to time-out with a message 
     with st.spinner("Loading data from Databricks SQL Warehouse..."):
-        data = get_data(table_name=table_name, limit=row_limit)
+        data = get_data(table_name=table_name, limit=row_limit, viewer_id=viewer_id_value)
 
     if data.empty:
         st.warning("No data returned from the query.")

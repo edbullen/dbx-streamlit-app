@@ -3,5 +3,7 @@ env:
   value: 'e2-demo-field-eng.cloud.databricks.com'
 - name: 'DATABRICKS_HTTP_PATH'
   value: '/sql/1.0/warehouses/4b9b953939869799'
+- name: 'APP_LOGS_VOL'
+  value: '/Volumes/users/ed_bullen/logs'
 
 command: ["streamlit", "run", "app.py"]
