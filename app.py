@@ -14,8 +14,8 @@ import streamlit as st
 # for local development - picks up variables from .env file
 load_dotenv() 
 
-server_hostname = os.getenv("DATABRICKS_SERVER_HOSTNAME")
-warehouse_http_path = os.getenv("DATABRICKS_HTTP_PATH")
+default_server_hostname = os.getenv("DATABRICKS_SERVER_HOSTNAME")
+default_warehouse_http_path = os.getenv("DATABRICKS_HTTP_PATH")
 log_root = Path(os.getenv("APP_LOGS_VOL", "./logs")).expanduser()
 log_file_path = log_root / "app.log"
 
@@ -79,7 +79,7 @@ def resolve_user_identity(headers: Dict[str, str]) -> Dict[str, Optional[str]]:
     return {"username": username, "email": email}
 
 
-def credential_provider():
+def credential_provider(server_hostname: str):
     config = Config(
         host=f"https://{server_hostname}",
         client_id=os.getenv("DATABRICKS_CLIENT_ID"),
@@ -98,22 +98,24 @@ def _run_query(table_name: str, limit: int, connection_kwargs: Dict[str, str]) -
 
 
 @st.cache_data(show_spinner=False)
-def _fetch_data(table_name: str, limit: int = 200) -> pd.DataFrame:
+def _fetch_data(server_hostname: str, warehouse_http_path: str, table_name: str, limit: int = 200) -> pd.DataFrame:
     connection_kwargs = dict(
         server_hostname=server_hostname,
         http_path=warehouse_http_path,
-        credentials_provider=credential_provider,
+        credentials_provider=lambda: credential_provider(server_hostname),
     )
     return _run_query(table_name, limit, connection_kwargs)
 
 
-def get_data(table_name: str, limit: int = 200, viewer_id: Optional[str] = None) -> pd.DataFrame:
-    data = _fetch_data(table_name=table_name, limit=limit)
+def get_data(server_hostname: str, warehouse_http_path: str, table_name: str, limit: int = 200, viewer_id: Optional[str] = None) -> pd.DataFrame:
+    data = _fetch_data(server_hostname=server_hostname, warehouse_http_path=warehouse_http_path, table_name=table_name, limit=limit)
     app_logger.info(
-        "viewer=%s table=%s limit=%s",
+        "viewer=%s table=%s limit=%s host=%s warehouse=%s",
         viewer_id or "unknown",
         table_name,
         limit,
+        server_hostname,
+        warehouse_http_path,
     )
     return data
 
@@ -153,9 +155,11 @@ if __name__ == "__main__":
     st.sidebar.markdown("---")
     st.sidebar.subheader("Connection details")
     st.sidebar.caption("Pulled from environment variables:")
+    server_hostname_input = st.sidebar.text_input("Workspace host", value=default_server_hostname or "")
+    warehouse_http_path_input = st.sidebar.text_input("SQL Warehouse path", value=default_warehouse_http_path or "")
     st.sidebar.code(
-        f"Workspace: {server_hostname or 'N/A'}\n"
-        f"SQL Warehouse path: {warehouse_http_path or 'N/A'}",
+        f"Workspace: {server_hostname_input or 'N/A'}\n"
+        f"SQL Warehouse path: {warehouse_http_path_input or 'N/A'}",
         language="bash",
     )
     viewer_id_value = user_identity.get("username") or user_identity.get("email")
@@ -166,7 +170,13 @@ if __name__ == "__main__":
     # --- Data load --- 
     # ToDo: if the warehouse is not available this spins for ever. Need to time-out with a message 
     with st.spinner("Loading data from Databricks SQL Warehouse..."):
-        data = get_data(table_name=table_name, limit=row_limit, viewer_id=viewer_id_value)
+        data = get_data(
+            server_hostname=server_hostname_input,
+            warehouse_http_path=warehouse_http_path_input,
+            table_name=table_name,
+            limit=row_limit,
+            viewer_id=viewer_id_value,
+        )
 
     if data.empty:
         st.warning("No data returned from the query.")
