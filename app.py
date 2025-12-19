@@ -5,7 +5,7 @@ import pandas as pd
 from dotenv import load_dotenv
 
 from databricks import sql
-from databricks.sdk.core import Config, oauth_service_principal
+from databricks.sdk.core import Config
 
 import streamlit as st
 
@@ -51,12 +51,8 @@ def resolve_user_identity(headers: Dict[str, str]) -> Dict[str, Optional[str]]:
 
 
 def credential_provider():
-    config = Config(
-        host=f"https://{server_hostname}",
-        client_id=os.getenv("DATABRICKS_CLIENT_ID"),
-        client_secret=os.getenv("DATABRICKS_CLIENT_SECRET"),
-    )
-    return oauth_service_principal(config)
+    config = Config(host=f"https://{server_hostname}")
+    return config.authenticate
 
 
 def _run_query(table_name: str, limit: int, connection_kwargs: Dict[str, str]) -> pd.DataFrame:
@@ -91,7 +87,7 @@ if __name__ == "__main__":
     st.title("🚕 NYC Taxi Trips – Databricks App Demo")
     st.caption(
         "Example Databricks App using **Streamlit**, a **Databricks SQL Warehouse**, "
-        "and **service principal** authentication."
+        "and **Databricks authentication**."
     )
 
     # --- Sidebar: controls & connection info ---
