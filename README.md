@@ -1,4 +1,4 @@
-## Test Databricks App - NYC Taxis
+## Simple Databricks App - NYC Taxis
 
 ![App Screenshot](./doc/apps_screenshot.png "screenshot") 
 
@@ -6,14 +6,12 @@
 ### Deploy a Databricks App 
 + Streamlit  
 + Databricks SQL   
-+ OAUTH M2M Authentication  
++ App Authentication to Databricks Services  
 
 ### Setup:  
 The following environment vars need to be set in app.yaml for when the app is deployed to Databricks workspace compute:  
 + `DATABRICKS_SERVER_HOSTNAME`  - the Databricks workspace URL, example: `dbc-xxxx.cloud.databricks.com`
 + `DATABRICKS_HTTP_PATH` - The SQL warehouse URL, example: `/sql/1.0/warehouses/xxxx` 
-
-There is no need to set up a service principle for connecting the to the warehouse (this is only needed for local dev environment testing).  See the next section for granting access on the warehouse.
 
 The command to run the app is set in the app.yaml file:
 
@@ -36,17 +34,23 @@ The command to run the app is set in the app.yaml file:
 DATABRICKS_SERVER_HOSTNAME=<myworkspace>.cloud.databricks.com  # No `https` prefix or trailing `/`  
 DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/################
 
-# Service Principal for SQL Warehouse
-DATABRICKS_ACCOUNT_ID=########-####-####-####-############
-DATABRICKS_CLIENT_ID=########-####-####-####-############
-DATABRICKS_CLIENT_SECRET=####################################
-
+# Stub the Databricks SSO user-id details
 LOCAL_DEV_EMAIL=dummy@email.com
 ```
 
 - Make sure the .env file is not committed in the source code repo
 
-2. Run the app:  
+
+2. Authenticate to the Databricks Workspace where the SQL Warehouse is running.  
+
+- Use [U2M Auth with the Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/authentication#oauth-user-to-machine-u2m-authentication).  
+
+```
+# Authenticate to a profile configured in ~/.databrickscfg
+databricks auth login -p my_profile_name
+```
+
+3. Run the app:  
 `streamlit run app.py`
 
 3. Go to the browser:   

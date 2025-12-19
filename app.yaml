@@ -1,7 +1,7 @@
 env:
 - name: 'DATABRICKS_SERVER_HOSTNAME'
-  value: 'e2-demo-field-eng.cloud.databricks.com'
+  value: 'e2-demo-west.cloud.databricks.com'
 - name: 'DATABRICKS_HTTP_PATH'
-  value: '/sql/1.0/warehouses/4b9b953939869799'
+  value: '/sql/1.0/warehouses/75fd8278393d07eb'
 
 command: ["streamlit", "run", "app.py"]
