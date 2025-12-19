@@ -107,7 +107,7 @@ if __name__ == "__main__":
     show_raw = st.sidebar.checkbox("Show raw data table", value=True)
 
     st.sidebar.markdown("---")
-    st.sidebar.subheader("Connection details")
+    st.sidebar.subheader("Warehouse Connection details")
     st.sidebar.caption("Pulled from environment variables:")
     st.sidebar.code(
         f"Workspace: {server_hostname or 'N/A'}\n"
