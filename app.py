@@ -1,5 +1,6 @@
 import os
-from typing import Dict, Optional
+from pathlib import Path
+from typing import Dict, Optional, Tuple
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -8,6 +9,7 @@ from databricks import sql
 from databricks.sdk.core import Config
 
 import streamlit as st
+import pydeck as pdk
 
 # for local development - picks up variables from .env file
 load_dotenv() 
@@ -45,17 +47,31 @@ def get_forwarded_headers() -> Dict[str, str]:
 
 
 def resolve_user_identity(headers: Dict[str, str]) -> Dict[str, Optional[str]]:
+    """Get an email ID and user-name from the Streamlit header"""
     username = headers.get("x-forwarded-preferred-username") or headers.get("x-forwarded-user")
     email = headers.get("x-forwarded-email")
     return {"username": username, "email": email}
 
 
+@st.cache_data(show_spinner=False)
+def load_zip_centroids() -> pd.DataFrame:
+    """Load ZIP centroids derived from NYC ZIP GeoJSON."""
+    path = Path("data/nyc_zip_centroids.json")
+    if not path.exists():
+        return pd.DataFrame()
+    df = pd.read_json(path)
+    df["zip"] = df["zip"].astype(str).str.zfill(5)
+    return df
+
+
 def credential_provider():
+    """Databricks SDK authentication"""
     config = Config(host=f"https://{server_hostname}")
     return config.authenticate
 
 
 def _run_query(table_name: str, limit: int, connection_kwargs: Dict[str, str]) -> pd.DataFrame:
+    """Execute a SQL query against the provided table-name and connection to Databricks SQL Warehouse"""
     query = f"SELECT * FROM {table_name} LIMIT {int(limit)}"
     with sql.connect(**connection_kwargs) as connection:
         with connection.cursor() as cursor:
@@ -66,6 +82,7 @@ def _run_query(table_name: str, limit: int, connection_kwargs: Dict[str, str]) -
 
 @st.cache_data(show_spinner=False)
 def get_data(table_name: str, limit: int = 200) -> pd.DataFrame:
+    """Get Streamlit data by calling _run_query() against SQL Warehouse"""
     connection_kwargs = dict(
         server_hostname=server_hostname,
         http_path=warehouse_http_path,
@@ -74,9 +91,11 @@ def get_data(table_name: str, limit: int = 200) -> pd.DataFrame:
     return _run_query(table_name, limit, connection_kwargs)
 
 
+# ** MAIN **
 if __name__ == "__main__":
     forwarded_headers = get_forwarded_headers()
     user_identity = resolve_user_identity(forwarded_headers)
+    zip_centroids_df = load_zip_centroids()
 
     # --- Page config / header ---
     st.set_page_config(
@@ -146,23 +165,52 @@ if __name__ == "__main__":
         col2.metric("Average total fare (USD)", f"${avg_total:,.2f}")
         col3.metric("Max total fare (USD)", f"${max_total:,.2f}")
 
-    # --- Visualisation: fare by passenger count (if columns exist) ---
-    # --- Visualisation: average fare by pickup ZIP (works with common nyctaxi.trips schema) ---
+    # --- Visualisation: map using ZIP centroids + average fare by pickup_zip (if columns exist) ---
     if {"pickup_zip", "fare_amount"}.issubset(data.columns):
-        st.subheader("Average fare by pickup ZIP (sample)")
+        st.subheader("Average fare by pickup ZIP (map view)")
 
         grouped = (
             data.groupby("pickup_zip")["fare_amount"]
-                .mean()
-                .reset_index()
-                .sort_values("pickup_zip")
+            .mean()
+            .reset_index()
+            .rename(columns={"fare_amount": "avg_fare", "pickup_zip": "zip"})
         )
-        grouped = grouped.rename(columns={"fare_amount": "avg_fare"})
+        grouped["zip"] = grouped["zip"].astype(str).str.zfill(5)
 
-        # Streamlit is happiest if the index is the category
-        chart_data = grouped.set_index("pickup_zip")["avg_fare"]
+        merged = (
+            grouped.merge(zip_centroids_df, on="zip", how="inner")
+            if not zip_centroids_df.empty
+            else pd.DataFrame()
+        )
 
-        st.bar_chart(chart_data)
+        if merged.empty:
+            st.info("No ZIP centroids available; showing table instead.")
+            st.dataframe(grouped.sort_values("avg_fare", ascending=False), use_container_width=True)
+        else:
+            min_fare = merged["avg_fare"].min()
+            max_fare = merged["avg_fare"].max()
+            span = max(max_fare - min_fare, 0.01)
+            merged = merged.assign(
+                _norm=(merged["avg_fare"] - min_fare) / span,
+            )
+            merged["_norm"] = merged["_norm"].clip(0, 1)
+            merged["_fill_r"] = 255
+            merged["_fill_g"] = (merged["_norm"] * 180).clip(0, 180)
+            merged["_fill_b"] = 60
+            merged["_radius"] = 100 + merged["_norm"] * 400
+
+            layer = pdk.Layer(
+                "ScatterplotLayer",
+                merged,
+                get_position="[lon, lat]",
+                get_fill_color="[ _fill_r, _fill_g, _fill_b ]",
+                get_radius="_radius",
+                pickable=True,
+                auto_highlight=True,
+            )
+            view_state = pdk.ViewState(latitude=40.73, longitude=-73.94, zoom=10, pitch=0)
+            tooltip = {"html": "<b>ZIP {zip}</b><br/>Avg fare: ${avg_fare:.2f}"}
+            st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view_state, tooltip=tooltip))
 
     # --- Optional: top expensive trips ---
     if {"total_amount", "trip_distance"}.issubset(data.columns):

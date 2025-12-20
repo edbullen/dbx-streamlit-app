@@ -3,4 +3,5 @@
 .python-version
 .vscode/
 .env
+__pycache__
 test_logs/
