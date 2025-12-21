@@ -117,13 +117,13 @@ if __name__ == "__main__":
 
     row_limit = st.sidebar.slider(
         "Number of rows to load",
-        min_value=10,
-        max_value=1000,
+        min_value=100,
+        max_value=10000,
         step=10,
-        value=200,
+        value=500,
     )
 
-    show_raw = st.sidebar.checkbox("Show raw data table", value=True)
+    show_raw = st.sidebar.checkbox("Show raw data table", value=False)
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("Warehouse Connection details")
@@ -194,10 +194,11 @@ if __name__ == "__main__":
                 _norm=(merged["avg_fare"] - min_fare) / span,
             )
             merged["_norm"] = merged["_norm"].clip(0, 1)
-            merged["_fill_r"] = 255
-            merged["_fill_g"] = (merged["_norm"] * 180).clip(0, 180)
+            merged["_fill_r"] = 60
+            merged["_fill_g"] = 255 - (merged["_norm"] * 360).clip(0, 180)
             merged["_fill_b"] = 60
-            merged["_radius"] = 100 + merged["_norm"] * 400
+            merged["_radius"] = 100 + merged["_norm"] * 500
+            merged["avg_fare_display"] = merged["avg_fare"].map(lambda x: f"${x:,.2f}")
 
             layer = pdk.Layer(
                 "ScatterplotLayer",
@@ -207,10 +208,11 @@ if __name__ == "__main__":
                 get_radius="_radius",
                 pickable=True,
                 auto_highlight=True,
+                opacity=0.6,
             )
-            view_state = pdk.ViewState(latitude=40.73, longitude=-73.94, zoom=10, pitch=0)
-            tooltip = {"html": "<b>ZIP {zip}</b><br/>Avg fare: ${avg_fare:.2f}"}
-            st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view_state, tooltip=tooltip))
+            view_state = pdk.ViewState(latitude=40.73, longitude=-73.94, zoom=11, pitch=2)
+            tooltip = {"html": "<b>ZIP {zip}</b><br/>Avg fare: {avg_fare_display}"}
+            st.pydeck_chart(pdk.Deck(map_style=None, layers=[layer], initial_view_state=view_state, tooltip=tooltip))
 
     # --- Optional: top expensive trips ---
     if {"total_amount", "trip_distance"}.issubset(data.columns):
