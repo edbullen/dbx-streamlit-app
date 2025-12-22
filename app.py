@@ -11,6 +11,10 @@ from databricks.sdk.core import Config
 import streamlit as st
 import pydeck as pdk
 
+# import custom functions
+from warehouse_queries import warehouse_fares_query
+from warehouse_queries import warehouse_dests_query
+
 # for local development - picks up variables from .env file
 load_dotenv() 
 
@@ -69,28 +73,6 @@ def credential_provider():
     config = Config(host=f"https://{server_hostname}")
     return config.authenticate
 
-
-def _run_query(table_name: str, limit: int, connection_kwargs: Dict[str, str]) -> pd.DataFrame:
-    """Execute a SQL query against the provided table-name and connection to Databricks SQL Warehouse"""
-    query = f"SELECT * FROM {table_name} LIMIT {int(limit)}"
-    with sql.connect(**connection_kwargs) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(query)
-            rows = [r.asDict() for r in cursor.fetchall()]
-            return pd.DataFrame(rows)
-
-
-@st.cache_data(show_spinner=False)
-def get_data(table_name: str, limit: int = 200) -> pd.DataFrame:
-    """Get Streamlit data by calling _run_query() against SQL Warehouse"""
-    connection_kwargs = dict(
-        server_hostname=server_hostname,
-        http_path=warehouse_http_path,
-        credentials_provider=credential_provider,
-    )
-    return _run_query(table_name, limit, connection_kwargs)
-
-
 # ** MAIN **
 if __name__ == "__main__":
     forwarded_headers = get_forwarded_headers()
@@ -115,15 +97,7 @@ if __name__ == "__main__":
     default_table = "samples.nyctaxi.trips"
     table_name = st.sidebar.text_input("Table name", value=default_table)
 
-    row_limit = st.sidebar.slider(
-        "Number of rows to load",
-        min_value=100,
-        max_value=10000,
-        step=10,
-        value=500,
-    )
-
-    show_raw = st.sidebar.checkbox("Show raw data table", value=False)
+    show_raw = st.sidebar.checkbox("Show aggregated data tables", value=False)
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("Warehouse Connection details")
@@ -137,95 +111,102 @@ if __name__ == "__main__":
     st.sidebar.caption("Auth mode: App authorization")
     st.sidebar.caption(f"Viewer: {viewer_label}")
 
-    # --- Data load --- 
-    # ToDo: if the warehouse is not available this spins for ever. Need to time-out with a message 
-    with st.spinner("Loading data from Databricks SQL Warehouse..."):
-        data = get_data(table_name=table_name, limit=row_limit)
+    connection_kwargs = dict(
+        server_hostname=server_hostname,
+        http_path=warehouse_http_path,
+        credentials_provider=credential_provider,
+    )
+    with st.spinner("Loading aggregated data from Databricks SQL Warehouse..."):
+        with sql.connect(**connection_kwargs) as connection:
+            pickup_fares_df = warehouse_fares_query(connection, table_name)
+            pickup_dest_df = warehouse_dests_query(connection, table_name)
 
-    if data.empty:
-        st.warning("No data returned from the query.")
+    if pickup_fares_df.empty:
+        st.warning("No aggregated data returned from the query.")
         st.stop()
 
-    st.success(f"Loaded {len(data)} rows from `{table_name}`")
+    st.success(f"Loaded {len(pickup_fares_df)} pickup ZIP aggregates from `{table_name}`")
 
-    # --- Top-level metrics (defensive: only if columns exist) ---
+    # --- Metrics + map mode selector ---
     st.subheader("Quick stats")
 
-    col1, col2, col3 = st.columns(3)
+    stats_col, mode_col = st.columns([3, 1])
+    map_mode = mode_col.radio("Map view", ["zip trip fares", "zip trip count"], index=0)
 
-    # Trip distance
-    if "trip_distance" in data.columns:
-        avg_dist = data["trip_distance"].mean()
-        col1.metric("Average trip distance (miles)", f"{avg_dist:,.2f}")
+    col1, col2, col3 = stats_col.columns(3)
 
-    # Total amount
-    if "total_amount" in data.columns:
-        avg_total = data["total_amount"].mean()
-        max_total = data["total_amount"].max()
-        col2.metric("Average total fare (USD)", f"${avg_total:,.2f}")
-        col3.metric("Max total fare (USD)", f"${max_total:,.2f}")
+    total_trips = int(pickup_fares_df["count"].sum())
+    col1.metric("Total trips (pickup ZIPs)", f"{total_trips:,}")
 
-    # --- Visualisation: map using ZIP centroids + average fare by pickup_zip (if columns exist) ---
-    if {"pickup_zip", "fare_amount"}.issubset(data.columns):
-        st.subheader("Average fare by pickup ZIP (map view)")
+    if map_mode == "zip trip fares":
+        weighted_avg_fare = (pickup_fares_df["avg_fare"] * pickup_fares_df["count"]).sum() / max(total_trips, 1)
+        max_avg_fare = pickup_fares_df["avg_fare"].max()
+        col2.metric("Weighted avg fare (USD)", f"${weighted_avg_fare:,.2f}")
+        col3.metric("Max avg fare by ZIP (USD)", f"${max_avg_fare:,.2f}")
+    else:
+        avg_trips_per_zip = total_trips / max(len(pickup_fares_df), 1)
+        max_trips_zip = pickup_fares_df["count"].max()
+        col2.metric("Avg trips per ZIP", f"{avg_trips_per_zip:,.1f}")
+        col3.metric("Max trips for a ZIP", f"{max_trips_zip:,}")
 
-        grouped = (
-            data.groupby("pickup_zip")["fare_amount"]
-            .mean()
-            .reset_index()
-            .rename(columns={"fare_amount": "avg_fare", "pickup_zip": "zip"})
+    # --- Visualisation: map using ZIP centroids with selectable metric ---
+    st.subheader("Pickup ZIP map")
+
+    fares_for_map = pickup_fares_df.rename(columns={"pickup_zip": "zip"}).copy()
+    fares_for_map["zip"] = fares_for_map["zip"].astype(str).str.zfill(5)
+
+    merged = (
+        fares_for_map.merge(zip_centroids_df, on="zip", how="inner")
+        if not zip_centroids_df.empty
+        else pd.DataFrame()
+    )
+
+    if merged.empty:
+        st.info("No ZIP centroids available; showing table instead.")
+        metric_sort = "avg_fare" if map_mode == "zip trip fares" else "count"
+        st.dataframe(fares_for_map.sort_values(metric_sort, ascending=False), use_container_width=True)
+    else:
+        value_col = "avg_fare" if map_mode == "zip trip fares" else "count"
+        merged = merged.rename(columns={value_col: "metric_value"})
+        min_val = merged["metric_value"].min()
+        max_val = merged["metric_value"].max()
+        span = max(max_val - min_val, 0.01)
+        merged = merged.assign(
+            _norm=(merged["metric_value"] - min_val) / span,
         )
-        grouped["zip"] = grouped["zip"].astype(str).str.zfill(5)
+        merged["_norm"] = merged["_norm"].clip(0, 1)
+        merged["_fill_r"] = 60
+        merged["_fill_g"] = 255 - (merged["_norm"] * 360).clip(0, 180)
+        merged["_fill_b"] = 60
+        merged["_radius"] = 100 + merged["_norm"] * 500
+        merged["avg_fare_display"] = merged.get("avg_fare", merged["metric_value"]).map(lambda x: f"${x:,.2f}") if map_mode == "zip trip fares" else None
+        merged["count_display"] = merged.get("count", merged["metric_value"]).map(lambda x: f"{int(x):,}")
 
-        merged = (
-            grouped.merge(zip_centroids_df, on="zip", how="inner")
-            if not zip_centroids_df.empty
-            else pd.DataFrame()
+        layer = pdk.Layer(
+            "ScatterplotLayer",
+            merged,
+            get_position="[lon, lat]",
+            get_fill_color="[ _fill_r, _fill_g, _fill_b ]",
+            get_radius="_radius",
+            pickable=True,
+            auto_highlight=True,
+            opacity=0.6,
         )
-
-        if merged.empty:
-            st.info("No ZIP centroids available; showing table instead.")
-            st.dataframe(grouped.sort_values("avg_fare", ascending=False), use_container_width=True)
+        view_state = pdk.ViewState(latitude=40.73, longitude=-73.94, zoom=11, pitch=2)
+        if map_mode == "zip trip fares":
+            tooltip = {"html": "<b>ZIP {zip}</b><br/>Avg fare: {avg_fare_display}<br/>Trips: {count}"}
         else:
-            min_fare = merged["avg_fare"].min()
-            max_fare = merged["avg_fare"].max()
-            span = max(max_fare - min_fare, 0.01)
-            merged = merged.assign(
-                _norm=(merged["avg_fare"] - min_fare) / span,
-            )
-            merged["_norm"] = merged["_norm"].clip(0, 1)
-            merged["_fill_r"] = 60
-            merged["_fill_g"] = 255 - (merged["_norm"] * 360).clip(0, 180)
-            merged["_fill_b"] = 60
-            merged["_radius"] = 100 + merged["_norm"] * 500
-            merged["avg_fare_display"] = merged["avg_fare"].map(lambda x: f"${x:,.2f}")
+            tooltip = {"html": "<b>ZIP {zip}</b><br/>Trips: {count_display}"}
+        st.pydeck_chart(pdk.Deck(map_style=None, layers=[layer], initial_view_state=view_state, tooltip=tooltip))
 
-            layer = pdk.Layer(
-                "ScatterplotLayer",
-                merged,
-                get_position="[lon, lat]",
-                get_fill_color="[ _fill_r, _fill_g, _fill_b ]",
-                get_radius="_radius",
-                pickable=True,
-                auto_highlight=True,
-                opacity=0.6,
-            )
-            view_state = pdk.ViewState(latitude=40.73, longitude=-73.94, zoom=11, pitch=2)
-            tooltip = {"html": "<b>ZIP {zip}</b><br/>Avg fare: {avg_fare_display}"}
-            st.pydeck_chart(pdk.Deck(map_style=None, layers=[layer], initial_view_state=view_state, tooltip=tooltip))
-
-    # --- Optional: top expensive trips ---
-    if {"total_amount", "trip_distance"}.issubset(data.columns):
-        st.subheader("Top 5 most expensive trips (sample)")
-        top_trips = (
-            data.sort_values("total_amount", ascending=False)
-            .head(5)
-            .reset_index(drop=True)
-        )
-        st.dataframe(top_trips, use_container_width=True)
 
     # --- Raw data table in an expander ---
     if show_raw:
         st.subheader("Sample data")
         with st.expander("Show data frame", expanded=True):
-            st.dataframe(data, use_container_width=True, height=400)
+            if not pickup_fares_df.empty:
+                st.markdown("**Average fare by pickup ZIP (warehouse query)**")
+                st.dataframe(pickup_fares_df, use_container_width=True, height=300)
+            if not pickup_dest_df.empty:
+                st.markdown("**Top pickup/dropoff pairs (warehouse query)**")
+                st.dataframe(pickup_dest_df, use_container_width=True, height=300)
