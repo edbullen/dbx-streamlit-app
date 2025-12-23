@@ -9,7 +9,8 @@ from databricks import sql
 from databricks.sdk.core import Config
 
 import streamlit as st
-import pydeck as pdk
+import plotly.express as px
+import plotly.graph_objects as go
 
 # import custom functions
 from warehouse_queries import warehouse_fares_query
@@ -98,6 +99,7 @@ if __name__ == "__main__":
     table_name = st.sidebar.text_input("Table name", value=default_table)
 
     show_raw = st.sidebar.checkbox("Show aggregated data tables", value=False)
+    sankey_limit = st.sidebar.slider("Sankey links (top N pickup→dropoff pairs)", min_value=20, max_value=200, step=10, value=20)
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("Warehouse Connection details")
@@ -131,7 +133,7 @@ if __name__ == "__main__":
     st.subheader("Quick stats")
 
     stats_col, mode_col = st.columns([3, 1])
-    map_mode = mode_col.radio("Map view", ["zip trip fares", "zip trip count"], index=0)
+    map_mode = mode_col.radio("Map view", ["zip trip fares", "zip trip count", "zip trip destinations"], index=0)
 
     col1, col2, col3 = stats_col.columns(3)
 
@@ -149,55 +151,103 @@ if __name__ == "__main__":
         col2.metric("Avg trips per ZIP", f"{avg_trips_per_zip:,.1f}")
         col3.metric("Max trips for a ZIP", f"{max_trips_zip:,}")
 
-    # --- Visualisation: map using ZIP centroids with selectable metric ---
-    st.subheader("Pickup ZIP map")
+    # --- Visualisation: map or sankey based on selection ---
+    if map_mode in {"zip trip fares", "zip trip count"}:
+        st.subheader("Pickup ZIP map")
 
-    fares_for_map = pickup_fares_df.rename(columns={"pickup_zip": "zip"}).copy()
-    fares_for_map["zip"] = fares_for_map["zip"].astype(str).str.zfill(5)
+        fares_for_map = pickup_fares_df.rename(columns={"pickup_zip": "zip"}).copy()
+        fares_for_map["zip"] = fares_for_map["zip"].astype(str).str.zfill(5)
 
-    merged = (
-        fares_for_map.merge(zip_centroids_df, on="zip", how="inner")
-        if not zip_centroids_df.empty
-        else pd.DataFrame()
-    )
-
-    if merged.empty:
-        st.info("No ZIP centroids available; showing table instead.")
-        metric_sort = "avg_fare" if map_mode == "zip trip fares" else "count"
-        st.dataframe(fares_for_map.sort_values(metric_sort, ascending=False), use_container_width=True)
-    else:
-        value_col = "avg_fare" if map_mode == "zip trip fares" else "count"
-        merged = merged.rename(columns={value_col: "metric_value"})
-        min_val = merged["metric_value"].min()
-        max_val = merged["metric_value"].max()
-        span = max(max_val - min_val, 0.01)
-        merged = merged.assign(
-            _norm=(merged["metric_value"] - min_val) / span,
+        merged = (
+            fares_for_map.merge(zip_centroids_df, on="zip", how="inner")
+            if not zip_centroids_df.empty
+            else pd.DataFrame()
         )
-        merged["_norm"] = merged["_norm"].clip(0, 1)
-        merged["_fill_r"] = 60
-        merged["_fill_g"] = 255 - (merged["_norm"] * 360).clip(0, 180)
-        merged["_fill_b"] = 60
-        merged["_radius"] = 100 + merged["_norm"] * 500
-        merged["avg_fare_display"] = merged.get("avg_fare", merged["metric_value"]).map(lambda x: f"${x:,.2f}") if map_mode == "zip trip fares" else None
-        merged["count_display"] = merged.get("count", merged["metric_value"]).map(lambda x: f"{int(x):,}")
 
-        layer = pdk.Layer(
-            "ScatterplotLayer",
-            merged,
-            get_position="[lon, lat]",
-            get_fill_color="[ _fill_r, _fill_g, _fill_b ]",
-            get_radius="_radius",
-            pickable=True,
-            auto_highlight=True,
-            opacity=0.6,
-        )
-        view_state = pdk.ViewState(latitude=40.73, longitude=-73.94, zoom=11, pitch=2)
-        if map_mode == "zip trip fares":
-            tooltip = {"html": "<b>ZIP {zip}</b><br/>Avg fare: {avg_fare_display}<br/>Trips: {count}"}
+        if merged.empty:
+            st.info("No ZIP centroids available; showing table instead.")
+            metric_sort = "avg_fare" if map_mode == "zip trip fares" else "count"
+            st.dataframe(fares_for_map.sort_values(metric_sort, ascending=False), use_container_width=True)
         else:
-            tooltip = {"html": "<b>ZIP {zip}</b><br/>Trips: {count_display}"}
-        st.pydeck_chart(pdk.Deck(map_style=None, layers=[layer], initial_view_state=view_state, tooltip=tooltip))
+            value_col = "avg_fare" if map_mode == "zip trip fares" else "count"
+            merged = merged.rename(columns={value_col: "metric_value"})
+            min_val = merged["metric_value"].min()
+            max_val = merged["metric_value"].max()
+            span = max(max_val - min_val, 0.01)
+            merged = merged.assign(
+                _norm=(merged["metric_value"] - min_val) / span,
+            )
+            merged["_norm"] = merged["_norm"].clip(0, 1)
+            merged["_fill_r"] = 60
+            merged["_fill_g"] = 255 - (merged["_norm"] * 360).clip(0, 180)
+            merged["_fill_b"] = 60
+            merged["_radius"] = 50 + (merged["_norm"] * 1000)
+            merged["avg_fare_display"] = (
+                merged.get("avg_fare", merged["metric_value"]).map(lambda x: f"${x:,.2f}")
+                if map_mode == "zip trip fares"
+                else None
+            )
+            merged["count_display"] = merged.get("count", merged["metric_value"]).map(lambda x: f"{int(x):,}")
+
+            color_col = "metric_value"
+            fig = px.scatter_map(
+                merged,
+                lat="lat",
+                lon="lon",
+                size="_radius",
+                color=color_col,
+                hover_name="zip",
+                hover_data=None,
+                color_continuous_scale="Aggrnyl",
+                zoom=10.5,
+                opacity=0.6,
+                height=600,
+            )
+            if map_mode == "zip trip fares":
+                fig.update_traces(
+                    customdata=merged[["zip", "avg_fare_display", "count_display"]].values,
+                    hovertemplate="<b>ZIP %{customdata[0]}</b><br>Avg Fare: %{customdata[1]}<br>Trip Count: %{customdata[2]}<extra></extra>",
+                )
+            else:
+                fig.update_traces(
+                    customdata=merged[["zip", "count_display"]].values,
+                    hovertemplate="<b>ZIP %{customdata[0]}</b><br>Trip Count: %{customdata[1]}<extra></extra>",
+                )
+            fig.update_layout(
+                mapbox_style="carto-positron",
+                margin={"r": 0, "t": 0, "l": 0, "b": 0},
+                paper_bgcolor="rgba(0,0,0,0)",
+            )
+            st.plotly_chart(fig, use_container_width=True, config={"scrollZoom": True})
+    else:
+        st.subheader("Top pickup → dropoff ZIPs (Sankey)")
+        if pickup_dest_df.empty:
+            st.info("No destination data returned from the query.")
+        else:
+            trips = pickup_dest_df.sort_values("count", ascending=False).head(sankey_limit)
+            trips = trips.rename(columns={"pickup_zip": "source", "dropoff_zip": "target"})
+            sources = trips["source"].astype(str)
+            targets = trips["target"].astype(str)
+            nodes = sorted(set(sources) | set(targets))
+            node_index = {zip_code: idx for idx, zip_code in enumerate(nodes)}
+            links = dict(
+                source=[node_index[z] for z in sources],
+                target=[node_index[z] for z in targets],
+                value=trips["count"].tolist(),
+            )
+            sankey_fig = go.Figure(
+                data=[
+                    go.Sankey(
+                        node=dict(label=nodes, pad=15, thickness=15, line=dict(color="gray", width=0.5)),
+                        link=links,
+                    )
+                ]
+            )
+            sankey_fig.update_layout(
+                margin=dict(l=20, r=20, t=20, b=20),
+                font=dict(family="Arial, sans-serif", size=14),
+            )
+            st.plotly_chart(sankey_fig, use_container_width=True)
 
 
     # --- Raw data table in an expander ---
