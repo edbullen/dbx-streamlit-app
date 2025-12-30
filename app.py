@@ -12,6 +12,9 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 
+# SQL Alchemy for lakebase  python operations
+from lakebase_psql import get_version
+
 # import custom functions
 from warehouse_queries import warehouse_fares_query
 from warehouse_queries import warehouse_dests_query
@@ -99,7 +102,7 @@ if __name__ == "__main__":
     table_name = st.sidebar.text_input("Table name", value=default_table)
 
     show_raw = st.sidebar.checkbox("Show aggregated data tables", value=False)
-    sankey_limit = st.sidebar.slider("Sankey links (top N pickup→dropoff pairs)", min_value=20, max_value=200, step=10, value=20)
+    #sankey_limit = st.sidebar.slider("Sankey links (top N pickup→dropoff pairs)", min_value=20, max_value=200, step=10, value=20)
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("Warehouse Connection details")
@@ -109,6 +112,14 @@ if __name__ == "__main__":
         f"SQL Warehouse path: {warehouse_http_path or 'N/A'}",
         language="bash",
     )
+
+    st.sidebar.subheader("Lakebase Connection details")
+    postgres_connect_version = get_version()
+    st.sidebar.code(
+        postgres_connect_version,
+        language="bash",
+    )
+
     viewer_label = user_identity.get("email") or user_identity.get("username") or "Unknown user"
     st.sidebar.caption("Auth mode: App authorization")
     st.sidebar.caption(f"Viewer: {viewer_label}")
@@ -221,6 +232,9 @@ if __name__ == "__main__":
             st.plotly_chart(fig, use_container_width=True, config={"scrollZoom": True})
     else:
         st.subheader("Top pickup → dropoff ZIPs (Sankey)")
+
+        sankey_limit = st.slider("Sankey links (top N pickup→dropoff pairs)", min_value=20, max_value=200, step=10, value=20)
+
         if pickup_dest_df.empty:
             st.info("No destination data returned from the query.")
         else:
