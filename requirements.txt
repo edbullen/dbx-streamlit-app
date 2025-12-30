@@ -6,4 +6,4 @@ streamlit==1.41.1
 python-dotenv
 plotly
 sqlalchemy
-psycopg
+psycopg[binary] # For local MAC M1, try just pre-install the PSQL client and then psycopg with out "binary"
