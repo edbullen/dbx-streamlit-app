@@ -21,7 +21,9 @@ Lightweight demonstration to show how the following components can be integrated
  | app.yaml - Databricks Apps env setting, not used during local dev / test
  | .env - create this for local IDE dev / test only
  | data/
-      | *.json
+        *.json
+ | tests/
+        test_*.py          
 ```
 
 ### Tests

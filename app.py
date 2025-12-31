@@ -13,17 +13,29 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # SQL Alchemy for lakebase  python operations
-from lakebase_psql import get_version
+from lakebase_psql import get_config, get_version, set_config
 
 # import custom functions
 from warehouse_queries import warehouse_fares_query
 from warehouse_queries import warehouse_dests_query
 
 # for local development - picks up variables from .env file
-load_dotenv() 
+load_dotenv()
 
-server_hostname = os.getenv("DATABRICKS_SERVER_HOSTNAME")
-warehouse_http_path = os.getenv("DATABRICKS_HTTP_PATH")
+def _resolve_connection_settings() -> Tuple[Optional[str], Optional[str]]:
+    """Prefer DB-stored config overrides, fall back to env vars."""
+    env_workspace = os.getenv("DATABRICKS_SERVER_HOSTNAME")
+    env_warehouse = os.getenv("DATABRICKS_HTTP_PATH")
+    try:
+        db_workspace = get_config("workspace")
+        db_warehouse = get_config("warehouse")
+    except Exception:
+        # If the config table is unavailable we silently fall back to env.
+        db_workspace = db_warehouse = None
+    return db_workspace or env_workspace, db_warehouse or env_warehouse
+
+
+server_hostname, warehouse_http_path = _resolve_connection_settings()
 
 
 def _local_header_overrides() -> Dict[str, str]:
@@ -106,7 +118,28 @@ if __name__ == "__main__":
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("Warehouse Connection details")
-    st.sidebar.caption("Pulled from environment variables:")
+    st.sidebar.caption("Config stored in Lakebase take precedence over env vars.")
+    initial_workspace = server_hostname or ""
+    initial_warehouse = warehouse_http_path or ""
+    workspace_input = st.sidebar.text_input("Workspace hostname", value=initial_workspace)
+    warehouse_input = st.sidebar.text_input("SQL Warehouse path", value=initial_warehouse)
+    dirty = (workspace_input != initial_workspace) or (warehouse_input != initial_warehouse)
+    if dirty and st.sidebar.button("Save connection settings"):
+        try:
+            if workspace_input:
+                set_config("workspace", workspace_input)
+            if warehouse_input:
+                set_config("warehouse", warehouse_input)
+            st.sidebar.success("Saved connection settings to Lakebase config.")
+            server_hostname = workspace_input or server_hostname
+            warehouse_http_path = warehouse_input or warehouse_http_path
+        except Exception as exc:
+            st.sidebar.error(f"Failed to save settings: {exc}")
+
+    # Use any in-flight edits during the current run.
+    server_hostname = workspace_input or server_hostname
+    warehouse_http_path = warehouse_input or warehouse_http_path
+
     st.sidebar.code(
         f"Workspace: {server_hostname or 'N/A'}\n"
         f"SQL Warehouse path: {warehouse_http_path or 'N/A'}",
