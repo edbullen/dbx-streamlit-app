@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 
 from databricks.sdk import WorkspaceClient
+from psycopg import errors
 
 # for local development - picks up variables from .env file
 load_dotenv()
@@ -52,4 +53,51 @@ def get_version() -> Optional[str]:
     with engine.connect() as conn:
         result = conn.execute(text("select version();"))
         ver = result.scalar_one_or_none().split(" ")[:2] 
-        return ' '.join(ver) + " " + os.getenv("PGUSER")
+        return ' '.join(ver) + " User:" + os.getenv("PGUSER")
+
+
+# Set Config: pass in two values, "key" and "value" and store them as an Upsert operation.  
+# create a new table called app_config, or use an existing one if it exists.
+# table has two columns: key and value - both just text strings (key max 32, value max 255 chars)
+
+
+# Get Config: pass in one values, "key" and return a "value", if it exists
+# If the table doesn't exist or if the key doesn't exist, just return a None value
+# table has two columns: key and value - both just text strings (key max 32, value max 255 chars)
+
+
+def _ensure_config_table(engine: Engine) -> None:
+    """Create the config table if it does not exist."""
+    ddl = """
+    create table if not exists app_config (
+        key varchar(32) primary key,
+        value varchar(255)
+    );
+    """
+    with engine.begin() as conn:
+        conn.execute(text(ddl))
+
+
+def set_config(key: str, value: str) -> None:
+    """Upsert a config key/value into the Lakebase table."""
+    engine = get_engine()
+    _ensure_config_table(engine)
+    upsert_sql = """
+    insert into app_config (key, value)
+    values (:key, :value)
+    on conflict (key) do update set value = excluded.value;
+    """
+    with engine.begin() as conn:
+        conn.execute(text(upsert_sql), {"key": key, "value": value})
+
+
+def get_config(key: str) -> Optional[str]:
+    """Fetch a config value by key, returning None when not present or table missing."""
+    engine = get_engine()
+    select_sql = "select value from app_config where key = :key;"
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(text(select_sql), {"key": key})
+            return result.scalar_one_or_none()
+    except errors.UndefinedTable:
+        return None
