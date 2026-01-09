@@ -53,7 +53,13 @@ Create or identify a Lakbase Database instance (transaction database) to use for
     - Choose the default `databricks_postgres` database and use the  *resource key* `database`. 
     - From the linked doc: *Databricks creates a PostgreSQL role in the selected database instance. The role name matches the service principal's client ID*
     - From the linked doc: *Databricks grants the service principal CONNECT and CREATE privileges on the selected database.*
+  
+NB - for initial configuration of Lakebase you need to grant permissions to the App Service Principal to create tables in the public schema
+- Find the Service Principal ID of the Lakebase App
+- Go to Lakebase Database and start a new SQL Query session
+- grant `USAGE` and `CREATE` on the Schema `public` for the App SP.
 
+![App Screenshot](./doc/lakebase_grant_to_SP.png "screenshot") 
 
 ## Running Locally for Development and Testing
 
