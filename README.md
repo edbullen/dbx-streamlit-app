@@ -1,5 +1,7 @@
 # Simple Databricks App - NYC Taxis
 
+## Screenshot 1 - main page
+
 ![App Screenshot](./doc/apps_screenshot.png "screenshot") 
 
 
@@ -124,4 +126,8 @@ Changes being developed on a laptop IDE can be syncronised by commiting to a loc
 ![Web GUI Deploy](./doc/apps_git_deploy_screenshot.png "deploying via the web gui") 
 
 
+## Screenshot 2 - sankey diagram
 
+Explore traffic between route-nodes.
+
+![Web GUI Deploy](./doc/sankey_diagram.png "sankey") 
