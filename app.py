@@ -13,7 +13,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # SQL Alchemy for lakebase  python operations
-from lakebase_psql import get_config, get_version, set_config
+from lakebase_psql import get_config, get_version, set_config, set_workspace_host
 
 # import custom functions
 from warehouse_queries import warehouse_fares_query
@@ -36,6 +36,8 @@ def _resolve_connection_settings() -> Tuple[Optional[str], Optional[str]]:
 
 
 server_hostname, warehouse_http_path = _resolve_connection_settings()
+# Ensure Lakebase token retrieval matches the resolved workspace host.
+set_workspace_host(server_hostname)
 
 
 def _local_header_overrides() -> Dict[str, str]:
@@ -117,6 +119,11 @@ if __name__ == "__main__":
     #sankey_limit = st.sidebar.slider("Sankey links (top N pickup→dropoff pairs)", min_value=20, max_value=200, step=10, value=20)
 
     st.sidebar.markdown("---")
+
+    viewer_label = user_identity.get("email") or user_identity.get("username") or "Unknown user"
+    st.sidebar.caption("Auth mode: App authorization")
+    st.sidebar.caption(f"Viewer: {viewer_label}")
+
     st.sidebar.subheader("Warehouse Connection details")
     st.sidebar.caption("Config stored in Lakebase take precedence over env vars.")
     initial_workspace = server_hostname or ""
@@ -124,6 +131,8 @@ if __name__ == "__main__":
     workspace_input = st.sidebar.text_input("Workspace hostname", value=initial_workspace)
     warehouse_input = st.sidebar.text_input("SQL Warehouse path", value=initial_warehouse)
     dirty = (workspace_input != initial_workspace) or (warehouse_input != initial_warehouse)
+    # Try Lakebase using the most recent workspace host input.
+    set_workspace_host(workspace_input or server_hostname)
     lakebase_available = True
     try:
         postgres_connect_version = get_version()
@@ -142,6 +151,7 @@ if __name__ == "__main__":
             st.sidebar.success("Saved connection settings to Lakebase config.")
             server_hostname = workspace_input or server_hostname
             warehouse_http_path = warehouse_input or warehouse_http_path
+            set_workspace_host(server_hostname)
         except Exception as exc:
             st.sidebar.error(f"Failed to save settings: {exc}")
 
@@ -161,9 +171,15 @@ if __name__ == "__main__":
         language="bash",
     )
 
-    viewer_label = user_identity.get("email") or user_identity.get("username") or "Unknown user"
-    st.sidebar.caption("Auth mode: App authorization")
-    st.sidebar.caption(f"Viewer: {viewer_label}")
+    postgres_host = os.getenv("PGHOST")
+    postgres_database = os.getenv("PGDATABASE")
+    postgres_port = os.getenv("PGPORT", "5432")
+    postgres_username = os.getenv("PGUSER")
+    st.sidebar.code(f"""Postgres Host: {postgres_host}
+Postgres Database: {postgres_database}
+Postgres Port: {postgres_port}
+Postgres Username: {postgres_username}
+""")
 
     connection_kwargs = dict(
         server_hostname=server_hostname,

@@ -23,6 +23,12 @@ def provide_token(dialect, conn_rec, cargs, cparams) -> None:
     cparams["password"] = workspace_client.config.oauth_token().access_token
 
 
+def set_workspace_host(hostname: Optional[str]) -> None:
+    """Reset the workspace client to use a new host (for token retrieval)."""
+    global workspace_client
+    workspace_client = WorkspaceClient(host=f"https://{hostname}") if hostname else WorkspaceClient()
+
+
 def _build_engine() -> Engine:
     postgres_host = os.getenv("PGHOST")
     postgres_database = os.getenv("PGDATABASE")
