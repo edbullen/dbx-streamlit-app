@@ -18,10 +18,10 @@ Lightweight demonstration to show how the following components can be integrated
  | app.py
  | warehouse_queries.py
  | lakebase_psql.py
- | app.yaml - Databricks Apps env setting, not used during local dev / test
- | .env - create this for local IDE dev / test only
+ | app.yaml              # DBX Apps env setting (not used for local dev)
+ | .env                  # create this for local IDE dev / test only
  | data/
-        *.json
+        *.json           # Geo-mapping data
  | tests/
         test_*.py          
 ```

@@ -124,7 +124,16 @@ if __name__ == "__main__":
     workspace_input = st.sidebar.text_input("Workspace hostname", value=initial_workspace)
     warehouse_input = st.sidebar.text_input("SQL Warehouse path", value=initial_warehouse)
     dirty = (workspace_input != initial_workspace) or (warehouse_input != initial_warehouse)
-    if dirty and st.sidebar.button("Save connection settings"):
+    lakebase_available = True
+    try:
+        postgres_connect_version = get_version()
+    except Exception as exc:
+        lakebase_available = False
+        postgres_connect_version = f"Lakebase unavailable: {exc}"
+
+    if not lakebase_available:
+        st.sidebar.warning("Lakebase unavailable; using env values and session overrides only.")
+    elif dirty and st.sidebar.button("Save connection settings"):
         try:
             if workspace_input:
                 set_config("workspace", workspace_input)
@@ -147,7 +156,6 @@ if __name__ == "__main__":
     )
 
     st.sidebar.subheader("Lakebase Connection details")
-    postgres_connect_version = get_version()
     st.sidebar.code(
         postgres_connect_version,
         language="bash",
