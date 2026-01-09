@@ -171,9 +171,18 @@ if __name__ == "__main__":
         credentials_provider=credential_provider,
     )
     with st.spinner("Loading aggregated data from Databricks SQL Warehouse..."):
-        with sql.connect(**connection_kwargs) as connection:
-            pickup_fares_df = warehouse_fares_query(connection, table_name)
-            pickup_dest_df = warehouse_dests_query(connection, table_name)
+        try:
+            with sql.connect(**connection_kwargs) as connection:
+                pickup_fares_df = warehouse_fares_query(connection, table_name)
+                pickup_dest_df = warehouse_dests_query(connection, table_name)
+        except Exception as exc:
+            err_msg = f"{exc.__class__.__name__}: {exc}"
+            st.error(
+                f"{err_msg}\n\n"
+                "Check workspace hostname and SQL warehouse path configuration. "
+                "Also check permission on the warehouse has been granted to this app."
+            )
+            st.stop()
 
     if pickup_fares_df.empty:
         st.warning("No aggregated data returned from the query.")
